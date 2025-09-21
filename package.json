@@ -1,13 +1,13 @@
 {
   "name": "bwsc",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "WebSocket client for BotWave WS server with CLI interface",
   "main": "client.js",
   "bin": {
-    "bwsc": "./index.js"
+    "bwsc": "./client.js"
   },
   "scripts": {
-    "start": "node index.js",
+    "start": "node client.js",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "keywords": [
