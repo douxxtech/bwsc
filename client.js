@@ -316,7 +316,7 @@ class BotWaveWSClient {
 
     showHeader() {
         const title = this.colorize('BotWave WebSocket Client', 'bright_blue');
-        const version = this.colorize('v1.0.0', 'dim');
+        const version = this.colorize('v1.0.1', 'dim');
         const divider = this.colorize('─'.repeat(50), 'dim');
         
         console.log(`\n${title} ${version}`);
