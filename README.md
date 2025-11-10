@@ -10,11 +10,10 @@ npm i -g bwsc
 ## Usage
 Connect to your server with
 ```bash
-bwsc <host> [-p port] [--pk passkey]
+bwsc <host> [passkey]
 ```
-- `host`: Hostname or IP address of your host machine.
-- `-p, --port`: Port of the BWS server, defaults to 9939.
-- `--pk, --passkey`: Passkey to authenticate to the BWS server, defaults to none.
+- `host`: Hostname or IP address of your host machine. Supports protocols and ports (e.g. `wss://example.com:443`). Defaults to `ws://localhost:9939` if given `localhost`.
+- `passkey`: Passkey to authenticate to the BWS server, defaults to none.
 
 ## License
 Licensed under the [GPLv3.0](LICENSE)

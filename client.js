@@ -5,9 +5,20 @@ const readline = require('readline');
 const { program } = require('commander');
 
 class BotWaveWSClient {
-    constructor(host, port, passkey) {
-        this.host = host;
-        this.port = port;
+    constructor(host, passkey) {
+        const protocolMatch = host.match(/^(wss?):\/\/(.+)$/);
+        const hostToParse = protocolMatch ? protocolMatch[2] : host;
+        this.protocol = protocolMatch ? protocolMatch[1] : 'ws';
+
+        const portMatch = hostToParse.match(/^(.+):(\d+)$/);
+        if (portMatch) {
+            this.host = portMatch[1];
+            this.port = parseInt(portMatch[2], 10);
+        } else {
+            this.host = hostToParse;
+            this.port = 9939; // default
+        }
+
         this.passkey = passkey;
         this.ws = null;
         this.authenticated = false;
@@ -15,7 +26,7 @@ class BotWaveWSClient {
         this.commandHistory = [];
         this.historyIndex = 0;
         this.connecting = false;
-        
+
         this.colors = {
             reset: '\u001b[0m',
             bold: '\u001b[1m',
@@ -58,7 +69,7 @@ class BotWaveWSClient {
     log(message, type = 'info') {
         const timestamp = new Date().toLocaleTimeString();
         const prefix = this.colorize(`[${timestamp}]`, 'dim');
-        
+
         switch (type) {
             case 'success':
                 console.log(`${prefix} ${this.colorize('[OK]', 'bright_green')} ${message}`);
@@ -82,11 +93,11 @@ class BotWaveWSClient {
         this.connecting = true;
 
         try {
-            const wsUrl = `ws://${this.host}:${this.port}`;
+            const wsUrl = `${this.protocol}://${this.host}:${this.port}`;
             this.log(`Connecting to ${wsUrl}...`, 'info');
-            
+
             this.ws = new WebSocket(wsUrl);
-            
+
             await new Promise((resolve, reject) => {
                 const timeout = setTimeout(() => {
                     reject(new Error('Connection timeout (5s)'));
@@ -106,7 +117,7 @@ class BotWaveWSClient {
 
             this.setupWebSocketHandlers();
             await this.authenticate();
-            
+
         } finally {
             this.connecting = false;
         }
@@ -141,7 +152,7 @@ class BotWaveWSClient {
             const authHandler = (data) => {
                 clearTimeout(timeout);
                 this.ws.removeListener('message', authHandler);
-                
+
                 try {
                     const response = JSON.parse(data);
                     if (response.type === 'auth_ok') {
@@ -165,13 +176,13 @@ class BotWaveWSClient {
 
     handleMessage(message) {
         if (!this.authenticated) return;
-        
+
         // Skip JSON auth responses
         try {
             const data = JSON.parse(message);
             if (data.type) return;
         } catch (e) {
-            // no json = log message 
+            // no json = log message
         }
 
         if (message.includes('WebSocket CMD')) {
@@ -179,7 +190,7 @@ class BotWaveWSClient {
         }
 
         const colorizedMessage = this.colorizeMessage(message);
-        
+
         if (this.rl) {
             readline.clearLine(process.stdout, 0);
             readline.cursorTo(process.stdout, 0);
@@ -234,7 +245,7 @@ class BotWaveWSClient {
 
         this.rl.on('line', (input) => {
             const command = input.trim();
-            
+
             if (!command) {
                 this.rl.prompt();
                 return;
@@ -316,12 +327,12 @@ class BotWaveWSClient {
 
     showHeader() {
         const title = this.colorize('BotWave WebSocket Client', 'bright_blue');
-        const version = this.colorize('v1.0.2', 'dim');
+        const version = this.colorize('v1.1.0', 'dim');
         const divider = this.colorize('─'.repeat(50), 'dim');
-        
+
         console.log(`\n${title} ${version}`);
         console.log(divider);
-        console.log(this.colorize('Built-in commands: help, exit', 'yellow'));
+        console.log(this.colorize('Built-in commands: clear, exit', 'yellow'));
         console.log(this.colorize('Use ↑/↓ arrows for command history\n', 'dim'));
     }
 
@@ -346,18 +357,15 @@ class BotWaveWSClient {
 program
     .name('bwsc')
     .description('BotWave WebSocket Client - Connect to BotWave WS servers')
-    .version('1.0.2')
-    .argument('<host>', 'Server hostname or IP address')
-    .option('-p, --port <port>', 'WebSocket port', parseInt, 9939)
-    .option('--pk, --passkey <key>', 'Authentication passkey')
+    .version('1.1.0')
+    .argument('<host>', 'Server (ws://host:port, wss://host:port, host:port, or just host)')
+    .argument('[passkey]', 'Authentication passkey (optional)')
     .parse();
 
+async function main() {
+    const [host, passkey] = program.args;
 
-    async function main() {
-    const options = program.opts();
-    const [host] = program.args;
-
-    const client = new BotWaveWSClient(host, options.port, options.passkey);
+    const client = new BotWaveWSClient(host, passkey);
 
     const shutdown = () => {
         console.log('\n');
@@ -373,7 +381,7 @@ program
         client.start();
     } catch (error) {
         client.log(`Failed to connect: ${error.message}`, 'error');
-        client.log(`Double check hostname, port and passkey!`, 'error');
+        client.log(`Double check protocol (wss:// ?), hostname, port and passkey!`, 'error');
         process.exit(1);
     }
 }
