@@ -61,16 +61,16 @@ class BotWaveWSClient {
         
         switch (type) {
             case 'success':
-                console.log(`${prefix} ${this.colorize('✓', 'bright_green')} ${message}`);
+                console.log(`${prefix} ${this.colorize('[OK]', 'bright_green')} ${message}`);
                 break;
             case 'error':
-                console.log(`${prefix} ${this.colorize('✗', 'bright_red')} ${message}`);
+                console.log(`${prefix} ${this.colorize('[ERR]', 'bright_red')} ${message}`);
                 break;
             case 'warning':
-                console.log(`${prefix} ${this.colorize('⚠', 'bright_yellow')} ${message}`);
+                console.log(`${prefix} ${this.colorize('[WARN]', 'bright_yellow')} ${message}`);
                 break;
             case 'info':
-                console.log(`${prefix} ${this.colorize('ℹ', 'bright_blue')} ${message}`);
+                console.log(`${prefix} ${this.colorize('[INFO]', 'bright_blue')} ${message}`);
                 break;
             default:
                 console.log(`${prefix} ${message}`);
@@ -316,7 +316,7 @@ class BotWaveWSClient {
 
     showHeader() {
         const title = this.colorize('BotWave WebSocket Client', 'bright_blue');
-        const version = this.colorize('v1.0.1', 'dim');
+        const version = this.colorize('v1.0.2', 'dim');
         const divider = this.colorize('─'.repeat(50), 'dim');
         
         console.log(`\n${title} ${version}`);
@@ -346,7 +346,7 @@ class BotWaveWSClient {
 program
     .name('bwsc')
     .description('BotWave WebSocket Client - Connect to BotWave WS servers')
-    .version('1.0.0')
+    .version('1.0.2')
     .argument('<host>', 'Server hostname or IP address')
     .option('-p, --port <port>', 'WebSocket port', parseInt, 9939)
     .option('--pk, --passkey <key>', 'Authentication passkey')
