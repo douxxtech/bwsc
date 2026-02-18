@@ -58,7 +58,14 @@ class BotWaveWSClient {
             BCAST: 'bright_magenta',
             VER: 'bright_cyan',
             UPD: 'bright_yellow',
-            HNDL: 'magenta'
+            HNDL: 'magenta',
+            SSTV: 'bright_blue',
+            AUTH: 'blue',
+            TLS: 'bright_red',
+            MORSE: 'magenta',
+            ALSA: 'bright_magenta',
+            QUEUE: 'yellow',
+            CVRT: 'bright_cyan'
         };
     }
 
@@ -327,7 +334,7 @@ class BotWaveWSClient {
 
     showHeader() {
         const title = this.colorize('BotWave WebSocket Client', 'bright_blue');
-        const version = this.colorize('v1.1.0', 'dim');
+        const version = this.colorize('v1.1.1', 'dim');
         const divider = this.colorize('─'.repeat(50), 'dim');
 
         console.log(`\n${title} ${version}`);
