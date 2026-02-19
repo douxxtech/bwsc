@@ -26,6 +26,7 @@ class BotWaveWSClient {
         this.commandHistory = [];
         this.historyIndex = 0;
         this.connecting = false;
+        this.silent = false;
 
         this.colors = {
             reset: '\u001b[0m',
@@ -74,6 +75,7 @@ class BotWaveWSClient {
     }
 
     log(message, type = 'info') {
+        if (this.silent) return;
         const timestamp = new Date().toLocaleTimeString();
         const prefix = this.colorize(`[${timestamp}]`, 'dim');
 
@@ -334,7 +336,7 @@ class BotWaveWSClient {
 
     showHeader() {
         const title = this.colorize('BotWave WebSocket Client', 'bright_blue');
-        const version = this.colorize('v1.1.1', 'dim');
+        const version = this.colorize('v1.1.2', 'dim');
         const divider = this.colorize('─'.repeat(50), 'dim');
 
         console.log(`\n${title} ${version}`);
@@ -355,7 +357,7 @@ class BotWaveWSClient {
             this.rl = null;
         }
         if (this.ws && this.ws.readyState !== WebSocket.CLOSED) {
-            this.ws.close();
+            this.ws.close(1000, 'done');
         }
         process.exit(0);
     }
@@ -364,13 +366,15 @@ class BotWaveWSClient {
 program
     .name('bwsc')
     .description('BotWave WebSocket Client - Connect to BotWave WS servers')
-    .version('1.1.0')
+    .version('1.1.2')
     .argument('<host>', 'Server (ws://host:port, wss://host:port, host:port, or just host)')
     .argument('[passkey]', 'Authentication passkey (optional)')
+    .option('-f, --fire <command>', 'Fire-and-forget a command')
     .parse();
 
 async function main() {
     const [host, passkey] = program.args;
+    const options = program.opts();
 
     const client = new BotWaveWSClient(host, passkey);
 
@@ -384,7 +388,19 @@ async function main() {
     process.on('SIGTERM', shutdown);
 
     try {
+        if (options.fire) {
+            client.silent = true;
+        }
+
         await client.connect();
+
+        if (options.fire) {
+            client.ws.send(options.fire);
+            client.ws.close(1000, 'done');
+            client.ws.on('close', () => process.exit(0));
+            return;
+        }
+
         client.start();
     } catch (error) {
         client.log(`Failed to connect: ${error.message}`, 'error');

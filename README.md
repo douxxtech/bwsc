@@ -15,6 +15,12 @@ bwsc <host> [passkey]
 - `host`: Hostname or IP address of your host machine. Supports protocols and ports (e.g. `wss://example.com:443`). Defaults to `ws://localhost:9939` if given `localhost`.
 - `passkey`: Passkey to authenticate to the BWS server, defaults to none.
 
+## Additional flags
+
+| Flag | Description |
+| -- | -- |
+| `-f, --fire <command>` | Fire-and-forget a command | 
+
 ## License
 Licensed under the [GPLv3.0](LICENSE)
 
