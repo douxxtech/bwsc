@@ -149,52 +149,53 @@ class BotWaveWSClient {
 
     async authenticate() {
         return new Promise((resolve, reject) => {
-            const authMessage = {
-                type: 'auth',
-                passkey: this.passkey || ''
-            };
-
             const timeout = setTimeout(() => {
-                reject(new Error('Authentication timeout (5s)'));
+                reject(new Error('Authentication timeout'));
             }, 5000);
 
             const authHandler = (data) => {
-                clearTimeout(timeout);
-                this.ws.removeListener('message', authHandler);
+                const message = data.toString().trim();
 
-                try {
-                    const response = JSON.parse(data);
-                    if (response.type === 'auth_ok') {
-                        this.authenticated = true;
-                        this.log('Authentication successful', 'success');
-                        resolve();
-                    } else if (response.type === 'auth_failed') {
-                        reject(new Error(`Authentication failed: ${response.message}`));
-                    } else {
-                        reject(new Error('Unexpected authentication response'));
-                    }
-                } catch (e) {
-                    reject(new Error('Invalid authentication response'));
+                if (message === 'Password:') {
+                    this.ws.send(this.passkey || '');
+                } else if (message === 'OK.') {
+                    clearTimeout(timeout);
+                    this.ws.removeListener('message', authHandler);
+                    this.authenticated = true;
+                    this.log('Authentication successful', 'success');
+                    resolve();
+                } else if (message.startsWith('Authentication failed')) {
+                    clearTimeout(timeout);
+                    this.ws.removeListener('message', authHandler);
+                    reject(new Error('Authentication failed: wrong passkey'));
                 }
             };
 
             this.ws.on('message', authHandler);
-            this.ws.send(JSON.stringify(authMessage));
+
+            if (!this.passkey) {
+                this.ws.removeListener('message', authHandler);
+                this.authenticated = true;
+                this.log('No passkey, skipping auth', 'info');
+                clearTimeout(timeout);
+                resolve();
+            }
         });
+    }
+
+    detectAuthMethod() {
+        /*
+        Versions prior to BotWave 1.1.0 are using a json auth handshake.
+        1.1.0+ are using a simple raw password handshake
+        */
+
+
     }
 
     handleMessage(message) {
         if (!this.authenticated) return;
 
-        // Skip JSON auth responses
-        try {
-            const data = JSON.parse(message);
-            if (data.type) return;
-        } catch (e) {
-            // no json = log message
-        }
-
-        if (message.includes('WebSocket CMD')) {
+        if (/\[\d{1,3}(\.\d{1,3}){3}\]/.test(message)) {
             return;
         }
 
@@ -336,7 +337,7 @@ class BotWaveWSClient {
 
     showHeader() {
         const title = this.colorize('BotWave WebSocket Client', 'bright_blue');
-        const version = this.colorize('v1.1.2', 'dim');
+        const version = this.colorize('v1.2.0', 'dim');
         const divider = this.colorize('─'.repeat(50), 'dim');
 
         console.log(`\n${title} ${version}`);
@@ -366,7 +367,7 @@ class BotWaveWSClient {
 program
     .name('bwsc')
     .description('BotWave WebSocket Client - Connect to BotWave WS servers')
-    .version('1.1.2')
+    .version('1.0.2')
     .argument('<host>', 'Server (ws://host:port, wss://host:port, host:port, or just host)')
     .argument('[passkey]', 'Authentication passkey (optional)')
     .option('-f, --fire <command>', 'Fire-and-forget a command')
