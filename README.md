@@ -21,6 +21,12 @@ bwsc <host> [passkey]
 | -- | -- |
 | `-f, --fire <command>` | Fire-and-forget a command | 
 
+## Older support
+`1.1.2` is the latest version supporting versions prior to `BotWave 1.2.0`.
+```bash
+npm i -g bwsc@1.1.2
+```
+
 ## License
 Licensed under the [GPLv3.0](LICENSE)
 
