@@ -20,6 +20,8 @@ bwsc <host> [passkey]
 | Flag | Description |
 | -- | -- |
 | `-f, --fire <command>` | Fire-and-forget a command | 
+| `-c, --command <command>` | Run a command and collect its output (use with -t) | 
+| `-t, --timeout <seconds>` | Seconds to wait after last output before exiting | 
 
 ## Older support
 `1.1.2` is the latest version supporting versions prior to `BotWave 1.2.0`.
