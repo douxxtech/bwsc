@@ -1,6 +1,6 @@
 {
   "name": "bwsc",
-  "version": "1.2.0",
+  "version": "1.2.1",
   "description": "WebSocket client for BotWave WS server with CLI interface",
   "main": "client.js",
   "bin": {
