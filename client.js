@@ -307,33 +307,28 @@ class BotWaveWSClient {
     async runCommand(command, timeoutSecs) {
         const txId = this.generateTransactionId();
         const taggedCommand = `${command} transaction_id=${txId}`;
-        const timeoutMs = parseFloat(timeoutSecs) * 1000;
+        const endMarker = `ENDtransaction_id=${txId}`;
 
         return new Promise((resolve) => {
-            let idleTimer = null;
             const output = [];
 
-            const resetTimer = () => {
-                if (idleTimer) clearTimeout(idleTimer);
-                idleTimer = setTimeout(() => {
-                    this.ws.close(1000, 'done');
-                    this.ws.on('close', () => resolve(output));
-                }, timeoutMs);
-            };
-
-            // override handleMessage to capture tagged output
             const originalHandle = this.handleMessage.bind(this);
             this.handleMessage = (message) => {
                 if (message.includes(txId)) {
+                    if (message.trim() === endMarker) {
+                        this.handleMessage = originalHandle;
+                        this.ws.close(1000, 'done');
+                        this.ws.on('close', () => resolve(output));
+                        return;
+                    }
+
                     output.push(message);
                     const cleaned = message.replace(`transaction_id=${txId}`, '').trimEnd();
                     console.log(this.colorizeMessage(cleaned));
-                    resetTimer();
                 }
             };
 
             this.ws.send(taggedCommand);
-            resetTimer(); // start the idle clock
         });
     }
 
@@ -409,7 +404,6 @@ program
     .argument('[passkey]', 'Authentication passkey (optional)')
     .option('-f, --fire <command>', 'Fire-and-forget a command')
     .option('-c, --command <command>', 'Run a command and collect its output (use with -t)')
-    .option('-t, --timeout <seconds>', 'Seconds to wait after last output before exiting (default: 0.5)', '0.5')
     .parse();
 
 async function main() {
@@ -442,8 +436,7 @@ async function main() {
         }
 
         if (options.command) {
-            const secs = options.timeout;
-            await client.runCommand(options.command, secs);
+            await client.runCommand(options.command);
             process.exit(0);
             return;
         }
