@@ -1,29 +1,29 @@
 {
-  "name": "bwsc",
-  "version": "1.2.2",
-  "description": "WebSocket client for BotWave WS server with CLI interface",
-  "main": "client.js",
-  "bin": {
-    "bwsc": "./client.js"
-  },
-  "scripts": {
-    "start": "node client.js",
-    "test": "echo \"Error: no test specified\" && exit 1"
-  },
-  "keywords": [
-    "botwave",
-    "websocket",
-    "cli",
-    "radio",
-    "broadcasting"
-  ],
-  "author": "Douxx",
-  "license": "GPL-3.0",
-  "engines": {
-    "node": ">=14.0.0"
-  },
-  "dependencies": {
-    "commander": "^14.0.1",
-    "ws": "^8.18.3"
-  }
+    "name": "bwsc",
+    "version": "1.2.2",
+    "description": "CLI client for remotely connecting to and controlling a BotWave server",
+    "main": "client.js",
+    "bin": {
+        "bwsc": "./client.js"
+    },
+    "scripts": {
+        "start": "node client.js",
+        "test": "echo \"Error: no test specified\" && exit 1"
+    },
+    "keywords": [
+        "botwave",
+        "websocket",
+        "cli",
+        "radio",
+        "broadcasting"
+    ],
+    "author": "Douxx",
+    "license": "GPL-3.0",
+    "engines": {
+        "node": ">=14.0.0"
+    },
+    "dependencies": {
+        "commander": "^14.0.1",
+        "ws": "^8.18.3"
+    }
 }
