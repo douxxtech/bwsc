@@ -1,5 +1,5 @@
 # BotWave Websocket Client (BWSC)
-BWSC is a CLI tool allowing you to remotely connect to [BotWave](https://github.com/dpipstudio/botwave/) websocket server, letting your send commands and manage your server / device remotely.
+BWSC is a CLI tool allowing you to remotely connect to [BotWave](https://github.com/dpipstudio/botwave/) websocket server, letting you send commands and manage your server / device remotely.
 
 ## Installation
 > Make sure you have nodejs and npm installed.
@@ -20,7 +20,7 @@ bwsc <host> [passkey]
 | Flag | Description |
 | -- | -- |
 | `-f, --fire <command>` | Fire-and-forget a command | 
-| `-c, --command <command>` | Run a command and collect its output (use with -t) | 
+| `-c, --command <command>` | Run a command and collect its output | 
 
 ## Older support
 `1.1.2` is the latest version supporting versions prior to `BotWave 1.2.0`.
