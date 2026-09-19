@@ -1,452 +1,365 @@
-#!/usr/bin/env node
+import WebSocket from 'ws';
+import { EventEmitter } from 'events';
 
-const WebSocket = require('ws');
-const readline = require('readline');
-const { program } = require('commander');
+/**
+ * Thrown when the server rejects the passkey, or closes the connection during authentication.
+ */
+export class AuthError extends Error {
+    /** @param {string} message */
+    constructor(message) {
+        super(message);
+        this.name = 'AuthError';
+    }
+}
 
-class BotWaveWSClient {
-    constructor(host, passkey) {
-        const protocolMatch = host.match(/^(wss?):\/\/(.+)$/);
-        const hostToParse = protocolMatch ? protocolMatch[2] : host;
-        this.protocol = protocolMatch ? protocolMatch[1] : 'ws';
+/**
+ * Thrown when connecting, authenticating or running a command takes too long.
+ */
+export class TimeoutError extends Error {
+    /** @param {string} message */
+    constructor(message) {
+        super(message);
+        this.name = 'TimeoutError';
+    }
+}
 
-        const portMatch = hostToParse.match(/^(.+):(\d+)$/);
-        if (portMatch) {
-            this.host = portMatch[1];
-            this.port = parseInt(portMatch[2], 10);
-        } else {
-            this.host = hostToParse;
-            this.port = 9939; // default
-        }
+/**
+ * @typedef {Object} ParsedHost
+ * @property {'ws'|'wss'} protocol
+ * @property {string} host
+ * @property {number} port
+ */
 
-        this.passkey = passkey;
+/**
+ * Splits a host string into protocol, host and port. Defaults to `ws` and port 9939.
+ * @param {string} host
+ * @returns {ParsedHost}
+ */
+function parseHost(host) {
+    const protocolMatch = host.match(/^(wss?):\/\/(.+)$/);
+    const hostToParse = protocolMatch ? protocolMatch[2] : host;
+    const protocol = protocolMatch ? protocolMatch[1] : 'ws';
+
+    const portMatch = hostToParse.match(/^(.+):(\d+)$/);
+    if (portMatch) {
+        return { protocol, host: portMatch[1], port: parseInt(portMatch[2], 10) };
+    }
+
+    return { protocol, host: hostToParse, port: 9939 }; // default
+}
+
+/**
+ * @typedef {Object} BotWaveClientOptions
+ * @property {string} host ws://host:port, wss://host:port, host:port or host
+ * @property {string} [passkey] server passkey, leave empty if the server doesn't ask for one
+ * @property {number} [timeout=5000] used for both connecting and authenticating (ms)
+ */
+
+/**
+ * @typedef {Object} RunOptions
+ * @property {number} [timeout=0] ms, 0 = wait forever
+ * @property {(line: string) => void} [onLine] called with each line as it arrives
+ */
+
+/**
+ * @typedef {Object} Transaction
+ * @property {(line: string) => void} onLine
+ * @property {() => void} end
+ * @property {(error: Error) => void} fail
+ */
+
+
+/**
+ * WebSocket client for a BotWave server.
+ *
+ * @fires BotWaveClient#open
+ * @fires BotWaveClient#authenticated
+ * @fires BotWaveClient#message
+ * @fires BotWaveClient#error
+ * @fires BotWaveClient#close
+ * @extends EventEmitter
+ */
+export class BotWaveClient extends EventEmitter {
+    /**
+     * @param {BotWaveClientOptions} options
+     * @throws {TypeError} if `host` is missing
+     */
+    constructor({ host, passkey, timeout = 5000 } = {}) {
+        super();
+        if (!host) throw new TypeError('host is required');
+
+        const parsed = parseHost(host);
+
+        /** @type {'ws'|'wss'} */
+        this.protocol = parsed.protocol;
+        /** @type {string} */
+        this.host = parsed.host;
+        /** @type {number} */
+        this.port = parsed.port;
+
+        /** @type {string} */
+        this.passkey = passkey ?? '';
+        /** @type {number} */
+        this.timeout = timeout; // used for both connecting and authenticating (ms)
+        /** @type {WebSocket|null} */
         this.ws = null;
+        /** @type {boolean} */
         this.authenticated = false;
-        this.rl = null;
-        this.commandHistory = [];
-        this.historyIndex = 0;
+        /** @type {boolean} */
         this.connecting = false;
-        this.silent = false;
-
-        this.colors = {
-            reset: '\u001b[0m',
-            bold: '\u001b[1m',
-            dim: '\u001b[2m',
-            red: '\u001b[31m',
-            green: '\u001b[32m',
-            yellow: '\u001b[33m',
-            blue: '\u001b[34m',
-            magenta: '\u001b[35m',
-            cyan: '\u001b[36m',
-            white: '\u001b[37m',
-            bright_red: '\u001b[91m',
-            bright_green: '\u001b[92m',
-            bright_yellow: '\u001b[93m',
-            bright_blue: '\u001b[94m',
-            bright_magenta: '\u001b[95m',
-            bright_cyan: '\u001b[96m',
-            bright_white: '\u001b[97m'
-        };
-
-        this.messageTypes = {
-            OK: 'bright_green',
-            ERR: 'bright_red',
-            WARN: 'bright_yellow',
-            INFO: 'bright_cyan',
-            CLIENT: 'magenta',
-            SERVER: 'cyan',
-            FILE: 'yellow',
-            BCAST: 'bright_magenta',
-            VER: 'bright_cyan',
-            UPD: 'bright_yellow',
-            HNDL: 'magenta',
-            SSTV: 'bright_blue',
-            AUTH: 'blue',
-            TLS: 'bright_red',
-            MORSE: 'magenta',
-            ALSA: 'bright_magenta',
-            QUEUE: 'yellow',
-            CVRT: 'bright_cyan'
-        };
+        /** @type {Map<string, Transaction>} */
+        this.transactions = new Map(); // txId -> { onLine, end, fail }
     }
 
-    colorize(text, color) {
-        return `${this.colors[color]}${text}${this.colors.reset}`;
+    /**
+     * Full websocket url built from protocol, host and port.
+     * @type {string}
+     */
+    get url() {
+        return `${this.protocol}://${this.host}:${this.port}`;
     }
 
-    log(message, type = 'info') {
-        if (this.silent) return;
-        const timestamp = new Date().toLocaleTimeString();
-        const prefix = this.colorize(`[${timestamp}]`, 'dim');
-
-        switch (type) {
-            case 'success':
-                console.log(`${prefix} ${this.colorize('[OK]', 'bright_green')} ${message}`);
-                break;
-            case 'error':
-                console.log(`${prefix} ${this.colorize('[ERR]', 'bright_red')} ${message}`);
-                break;
-            case 'warning':
-                console.log(`${prefix} ${this.colorize('[WARN]', 'bright_yellow')} ${message}`);
-                break;
-            case 'info':
-                console.log(`${prefix} ${this.colorize('[INFO]', 'bright_blue')} ${message}`);
-                break;
-            default:
-                console.log(`${prefix} ${message}`);
-        }
-    }
-
+    /**
+     * Opens the websocket and authenticates.
+     * @returns {Promise<this>}
+     * @throws {Error} if already connected (or connecting)
+     * @throws {TimeoutError} if connecting or authenticating takes longer than `timeout`
+     * @throws {AuthError} if the passkey is wrong or the connection closes during auth
+     */
     async connect() {
-        if (this.connecting) return;
+        if (this.connecting || this.isConnected())
+            throw new Error('Already connected (or connecting)');
+
         this.connecting = true;
 
         try {
-            const wsUrl = `${this.protocol}://${this.host}:${this.port}`;
-            this.log(`Connecting to ${wsUrl}...`, 'info');
-
-            this.ws = new WebSocket(wsUrl);
+            this.ws = new WebSocket(this.url);
 
             await new Promise((resolve, reject) => {
-                const timeout = setTimeout(() => {
-                    reject(new Error('Connection timeout (5s)'));
-                }, 5000);
+                const timer = setTimeout(() => {
+                    reject(new TimeoutError(`Connection timeout (${this.timeout / 1000}s)`));
+                }, this.timeout);
 
                 this.ws.on('open', () => {
-                    clearTimeout(timeout);
-                    this.log('WebSocket connection established', 'success');
-                    resolve();
+                    clearTimeout(timer);
+                    this.emit('open');
+                    this.setupWebSocketHandlers();
+                    resolve(this.authenticate());
                 });
 
                 this.ws.on('error', (error) => {
-                    clearTimeout(timeout);
+                    clearTimeout(timer);
                     reject(error);
                 });
             });
 
-            this.setupWebSocketHandlers();
-            await this.authenticate();
+            this.emit('authenticated');
+
+            return this;
+
+        } catch (error) {
+            this.ws?.terminate();
+            throw error;
 
         } finally {
             this.connecting = false;
         }
     }
 
+    /**
+     * Hooks up the message/error/close listeners once the socket is open.
+     * @private
+     * @returns {void}
+     */
     setupWebSocketHandlers() {
         this.ws.on('message', (data) => {
             this.handleMessage(data.toString());
         });
 
         this.ws.on('error', (error) => {
-            this.log(`WebSocket error: ${error.message}`, 'error');
+            if (this.listenerCount('error') > 0) this.emit('error', error);
         });
 
         this.ws.on('close', (code, reason) => {
-            this.log(`Connection closed (${code}): ${reason || 'No reason provided'}`, 'warning');
-            this.cleanup();
+            this.authenticated = false;
+
+            // stuff still waiting for an answer wont get one
+            for (const tx of this.transactions.values()) {
+                tx.fail(new Error('Connection closed'));
+            }
+
+            this.emit('close', code, reason.toString());
         });
     }
 
-    async authenticate() {
+    /**
+     * Runs the passkey handshake. Resolves right away if no passkey was given.
+     * @private
+     * @returns {Promise<void>}
+     * @throws {TimeoutError} if the server doesn't answer in time
+     * @throws {AuthError} if the passkey is wrong or the connection closes during auth
+     */
+    authenticate() {
         return new Promise((resolve, reject) => {
-            const timeout = setTimeout(() => {
-                reject(new Error('Authentication timeout'));
-            }, 5000);
+            if (!this.passkey) {
+                // no passkey, assuming the server doesn't ask for one
+                this.authenticated = true;
+                return resolve();
+            }
+
+            const cleanup = () => {
+                clearTimeout(timer);
+                this.ws.removeListener('message', authHandler);
+                this.ws.removeListener('close', onClose);
+            };
+
+            const timer = setTimeout(() => {
+                cleanup();
+                reject(new TimeoutError('Authentication timeout'));
+            }, this.timeout);
 
             const authHandler = (data) => {
                 const message = data.toString().trim();
 
                 if (message === 'Password:') {
-                    this.ws.send(this.passkey || '');
+                    this.ws.send(this.passkey);
+
                 } else if (message === 'OK.') {
-                    clearTimeout(timeout);
-                    this.ws.removeListener('message', authHandler);
+                    cleanup();
                     this.authenticated = true;
-                    this.log('Authentication successful', 'success');
                     resolve();
+                    
                 } else if (message.startsWith('Authentication failed')) {
-                    clearTimeout(timeout);
-                    this.ws.removeListener('message', authHandler);
-                    reject(new Error('Authentication failed: wrong passkey'));
+                    cleanup();
+                    reject(new AuthError('Authentication failed: wrong passkey'));
                 }
+            };
+
+            const onClose = () => {
+                cleanup();
+                reject(new AuthError('Connection closed during authentication'));
             };
 
             this.ws.on('message', authHandler);
-
-            if (!this.passkey) {
-                this.ws.removeListener('message', authHandler);
-                this.authenticated = true;
-                this.log('No passkey, skipping auth', 'info');
-                clearTimeout(timeout);
-                resolve();
-            }
+            this.ws.on('close', onClose);
         });
     }
 
-    detectAuthMethod() {
-        /*
-        Versions prior to BotWave 1.1.0 are using a json auth handshake.
-        1.1.0+ are using a simple raw password handshake
-        */
-
-
-    }
-
+    /**
+     * Routes an incoming line to the matching transaction, or emits it as a `message` event.
+     * @private
+     * @param {string} message
+     * @returns {void}
+     */
     handleMessage(message) {
         if (!this.authenticated) return;
 
-        if (/\[\d{1,3}(\.\d{1,3}){3}\]/.test(message)) {
+        for (const [txId, tx] of this.transactions) {
+            if (!message.includes(txId)) continue;
+
+            if (message.trim() === `ENDtransaction_id=${txId}`) {
+                tx.end();
+            } else {
+                tx.onLine(message.replace(`transaction_id=${txId}`, '').trimEnd());
+            }
             return;
         }
 
-        const colorizedMessage = this.colorizeMessage(message);
-
-        if (this.rl) {
-            readline.clearLine(process.stdout, 0);
-            readline.cursorTo(process.stdout, 0);
-            console.log(colorizedMessage);
-            this.rl.prompt(true);
-        } else {
-            console.log(colorizedMessage);
-        }
+        this.emit('message', message);
     }
 
-    colorizeMessage(message) {
-        // tagged messages
-        const tagMatch = message.match(/^\[([A-Z]+)\]\s(.*)$/);
-        if (tagMatch) {
-            const [, tag, content] = tagMatch;
-            const color = this.messageTypes[tag];
-            if (color) {
-                return `${this.colorize(`[${tag}]`, color)} ${content}`;
-            }
-        }
-
-        // sec devicdesrs
-        if (message.includes('─')) {
-            return this.colorize(message, 'bright_blue');
-        }
-
-        // client info matches
-        if (message.match(/^\s+(Hostname|Address|Protocol|Connected|Last seen|Machine):/)) {
-            return this.colorize(message, 'cyan');
-        }
-
-        // id lines
-        if (message.match(/^ID:\s/)) {
-            return this.colorize(message, 'bright_white');
-        }
-
-        // intends
-        if (message.match(/^\s{2,4}[^\s]/)) {
-            return this.colorize(message, 'white');
-        }
-
-        return message;
-    }
-
-    setupReadline() {
-        this.rl = readline.createInterface({
-            input: process.stdin,
-            output: process.stdout,
-            prompt: this.colorize('botwave › ', 'bright_green'),
-            historySize: 100
-        });
-
-        this.rl.on('line', (input) => {
-            const command = input.trim();
-
-            if (!command) {
-                this.rl.prompt();
-                return;
-            }
-
-            this.handleCommand(command);
-        });
-
-        this.rl.on('close', () => {
-            this.cleanup();
-        });
-
-        this.rl.on('SIGINT', () => {
-            console.log('\n' + this.colorize('Use "exit" or Ctrl+D to quit', 'yellow'));
-            this.rl.prompt();
-        });
-
-        this.setupHistoryNavigation();
-    }
-
-    setupHistoryNavigation() {
-        this.rl.input.on('keypress', (str, key) => {
-            if (!key) return;
-
-            if (key.name === 'up' && this.historyIndex > 0) {
-                this.historyIndex--;
-                this.rl.line = this.commandHistory[this.historyIndex];
-                this.rl.cursor = this.rl.line.length;
-                this.rl._refreshLine();
-            } else if (key.name === 'down') {
-                if (this.historyIndex < this.commandHistory.length - 1) {
-                    this.historyIndex++;
-                    this.rl.line = this.commandHistory[this.historyIndex];
-                    this.rl.cursor = this.rl.line.length;
-                } else {
-                    this.historyIndex = this.commandHistory.length;
-                    this.rl.line = '';
-                    this.rl.cursor = 0;
-                }
-                this.rl._refreshLine();
-            }
-        });
-    }
-
-    generateTransactionId() {
-        return `bwsc_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
-    }
-
-    async runCommand(command, timeoutSecs) {
-        const txId = this.generateTransactionId();
-        const taggedCommand = `${command} transaction_id=${txId}`;
-        const endMarker = `ENDtransaction_id=${txId}`;
-
-        return new Promise((resolve) => {
-            const output = [];
-
-            const originalHandle = this.handleMessage.bind(this);
-            this.handleMessage = (message) => {
-                if (message.includes(txId)) {
-                    if (message.trim() === endMarker) {
-                        this.handleMessage = originalHandle;
-                        this.ws.close(1000, 'done');
-                        this.ws.on('close', () => resolve(output));
-                        return;
-                    }
-
-                    output.push(message);
-                    const cleaned = message.replace(`transaction_id=${txId}`, '').trimEnd();
-                    console.log(this.colorizeMessage(cleaned));
-                }
-            };
-
-            this.ws.send(taggedCommand);
-        });
-    }
-
-    handleCommand(command) {
-        if (command === 'exit' || command === 'quit') {
-            this.log('bye!', 'info');
-            this.cleanup();
-            return;
-        }
-
-        if (command === 'clear') {
-            console.clear();
-            this.showHeader();
-            this.rl.prompt();
-            return;
-        }
-
-        if (this.commandHistory[this.commandHistory.length - 1] !== command) {
-            this.commandHistory.push(command);
-            if (this.commandHistory.length > 100) {
-                this.commandHistory.shift();
-            }
-        }
-        this.historyIndex = this.commandHistory.length;
-
-        if (this.isConnected()) {
-            this.ws.send(command);
-        } else {
-            this.log('Not connected to server', 'error');
-        }
-
-        this.rl.prompt();
-    }
-
+    /**
+     * Whether the socket is open and authenticated.
+     * @returns {boolean}
+     */
     isConnected() {
         return this.ws && this.ws.readyState === WebSocket.OPEN && this.authenticated;
     }
 
-    showHeader() {
-        const title = this.colorize('BotWave WebSocket Client', 'bright_blue');
-        const version = this.colorize('v1.2.0', 'dim');
-        const divider = this.colorize('─'.repeat(50), 'dim');
-
-        console.log(`\n${title} ${version}`);
-        console.log(divider);
-        console.log(this.colorize('Built-in commands: clear, exit', 'yellow'));
-        console.log(this.colorize('Use ↑/↓ arrows for command history\n', 'dim'));
+    /**
+     * Makes a unique id used to match a command with its answer.
+     * @private
+     * @returns {string}
+     */
+    generateTransactionId() {
+        return `bwsc_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
     }
 
-    start() {
-        this.showHeader();
-        this.setupReadline();
-        this.rl.prompt();
+    /**
+     * Sends a command without waiting for its output.
+     * @param {string} command
+     * @returns {Promise<void>}
+     * @throws {Error} if not connected, or if the send fails
+     */
+    send(command) {
+        return new Promise((resolve, reject) => {
+            if (!this.isConnected()) return reject(new Error('Not connected to server'));
+
+            this.ws.send(command, (error) => (error ? reject(error) : resolve()));
+        });
     }
 
-    cleanup() {
-        if (this.rl) {
-            this.rl.close();
-            this.rl = null;
-        }
-        if (this.ws && this.ws.readyState !== WebSocket.CLOSED) {
+
+    /**
+     * Runs a command and collects its output.
+     * @param {string} command
+     * @param {RunOptions} [options]
+     * @returns {Promise<string[]>} every line of output, in order
+     * @throws {Error} if not connected, the send fails, or the connection closes before the command ends
+     * @throws {TimeoutError} if `timeout` is set and reached before the command ends
+     */
+    run(command, { timeout = 0, onLine } = {}) {
+        return new Promise((resolve, reject) => {
+            if (!this.isConnected()) return reject(new Error('Not connected to server'));
+
+            const txId = this.generateTransactionId();
+            const lines = [];
+            let timer = null;
+
+            /** @type {Transaction} */
+            const tx = {
+                onLine: (line) => {
+                    lines.push(line);
+                    if (onLine) onLine(line);
+                },
+                end: () => {
+                    clearTimeout(timer);
+                    this.transactions.delete(txId);
+                    resolve(lines);
+                },
+                fail: (error) => {
+                    clearTimeout(timer);
+                    this.transactions.delete(txId);
+                    reject(error);
+                }
+            };
+
+            this.transactions.set(txId, tx);
+
+            if (timeout > 0) {
+                timer = setTimeout(() => {
+                    tx.fail(new TimeoutError(`Command timeout (${timeout / 1000}s)`));
+                }, timeout);
+            }
+
+            this.ws.send(`${command} transaction_id=${txId}`, (error) => {
+                if (error) tx.fail(error);
+            });
+        });
+    }
+
+    /**
+     * Closes the connection.
+     * @returns {Promise<void>} resolves once the socket is fully closed
+     */
+    close() {
+        return new Promise((resolve) => {
+            if (!this.ws || this.ws.readyState === WebSocket.CLOSED) return resolve();
+
+            this.ws.once('close', () => resolve());
             this.ws.close(1000, 'done');
-        }
-        process.exit(0);
+        });
     }
 }
 
-program
-    .name('bwsc')
-    .description('BotWave WebSocket Client - Connect to BotWave WS servers')
-    .version('1.0.2')
-    .argument('<host>', 'Server (ws://host:port, wss://host:port, host:port, or just host)')
-    .argument('[passkey]', 'Authentication passkey (optional)')
-    .option('-f, --fire <command>', 'Fire-and-forget a command')
-    .option('-c, --command <command>', 'Run a command and collect its output (use with -t)')
-    .parse();
-
-async function main() {
-    const [host, passkey] = program.args;
-    const options = program.opts();
-
-    const client = new BotWaveWSClient(host, passkey);
-
-    const shutdown = () => {
-        console.log('\n');
-        client.log('Shutting down...', 'info');
-        client.cleanup();
-    };
-
-    process.on('SIGINT', shutdown);
-    process.on('SIGTERM', shutdown);
-
-    try {
-        if (options.fire || options.command) {
-            client.silent = true;
-        }
-
-        await client.connect();
-
-        if (options.fire) {
-            client.ws.send(options.fire);
-            client.ws.close(1000, 'done');
-            client.ws.on('close', () => process.exit(0));
-            return;
-        }
-
-        if (options.command) {
-            await client.runCommand(options.command);
-            process.exit(0);
-            return;
-        }
-
-        client.start();
-    } catch (error) {
-        client.log(`Failed to connect: ${error.message}`, 'error');
-        client.log(`Double check protocol (wss:// ?), hostname, port and passkey!`, 'error');
-        process.exit(1);
-    }
-}
-
-main().catch(console.error);
+export default BotWaveClient;
