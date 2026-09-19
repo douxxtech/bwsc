@@ -4,6 +4,7 @@
 !LICENSE
 !README.md
 !package.json
-!client.js
+!/src/
+!/src/**
 !/.github/
 !/.github/**
