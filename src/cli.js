@@ -30,7 +30,13 @@ class BotWaveClientCLI {
             bright_blue: '\u001b[94m',
             bright_magenta: '\u001b[95m',
             bright_cyan: '\u001b[96m',
-            bright_white: '\u001b[97m'
+            bright_white: '\u001b[97m',
+            bright_yellow_bold: '\u001b[93m\u001b[1m',
+            purple: '\u001b[38;5;129m',
+            pink: '\u001b[38;5;213m',
+            orange: '\u001b[38;5;208m',
+            converter: '\u001b[38;2;50;215;165m',
+            environ: '\u001b[38;2;224;107;61m'
         };
 
         this.messageTypes = {
@@ -43,15 +49,17 @@ class BotWaveClientCLI {
             FILE: 'yellow',
             BCAST: 'bright_magenta',
             VER: 'bright_cyan',
-            UPD: 'bright_yellow',
+            UPD: 'bright_yellow_bold',
             HNDL: 'magenta',
             SSTV: 'bright_blue',
             AUTH: 'blue',
-            TLS: 'bright_red',
-            MORSE: 'magenta',
-            ALSA: 'bright_magenta',
-            QUEUE: 'yellow',
-            CVRT: 'bright_cyan'
+            TLS: 'red',
+            MORSE: 'purple',
+            ALSA: 'pink',
+            QUEUE: 'orange',
+            DBG: 'orange',
+            CVRT: 'converter',
+            ENV: 'environ'
         };
 
         this.setupClientHandlers();

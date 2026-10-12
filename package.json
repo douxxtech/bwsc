@@ -1,6 +1,6 @@
 {
     "name": "bwsc",
-    "version": "2.0.0",
+    "version": "2.0.1",
     "type": "module",
     "description": "CLI client for remotely connecting to and controlling a BotWave server",
     "main": "./src/index.js",
